@@ -35,11 +35,20 @@ body { background: var(--bg); color: var(--ink); font-family: var(--f); font-siz
 .iconbtn { font: inherit; border: 1px solid var(--line); background: var(--surface); color: var(--ink); width: 40px; height: 40px; border-radius: 8px; cursor: pointer; font-size: 18px; }
 .summary { display: flex; gap: 14px; font-size: 13px; color: var(--muted); flex-wrap: wrap; justify-content: center; }
 .summary b { color: var(--ink); }
-.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.wrap > section { min-width: 0; }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; max-width: 100%; }
 .chips button { font: inherit; font-size: 14px; white-space: nowrap; border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
 .chips button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .chips button span { color: inherit; opacity: .65; margin-left: 4px; }
 .list { display: grid; gap: 8px; }
+.selbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+.selbar .count { font-size: 13px; color: var(--muted); margin-right: auto; }
+.chips button.special[aria-pressed="false"] { border-color: var(--in); color: var(--in); }
+.chips button.special[aria-pressed="true"] { background: var(--in); border-color: var(--in); color: #fff; }
+.row .pick { width: 22px; height: 22px; accent-color: var(--accent); flex: none; margin: 0; cursor: pointer; }
+.row.selected { outline: 2px solid var(--accent); outline-offset: -1px; }
+.row.selmode { cursor: pointer; }
+.namelist { font-size: 13px; color: var(--muted); max-height: 120px; overflow-y: auto; }
 .group { font-size: 13px; font-weight: 700; color: var(--muted); padding: 8px 2px 0; }
 .row { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 10px 10px 14px; display: flex; align-items: center; gap: 12px; min-width: 0; }
 .row.state-in { background: var(--in-soft); }
@@ -122,6 +131,7 @@ textarea { min-height: 120px; resize: vertical; }
     </div>
     <div class="summary" id="summary" style="margin-top:6px"></div>
     <div class="chips" id="classBar" style="margin-top:10px"></div>
+    <div class="selbar" id="selBar"></div>
     <div class="list" id="list" style="margin-top:10px"></div>
   </section>
 
@@ -199,6 +209,9 @@ let day = ymd(new Date());
 let entries = {};         // sid -> {in, out}
 let settings = {};
 let dayRef = null;
+let selMode = false;
+const selected = new Set();
+const IN_NOW = "__in";   // special filter: students who checked in and have not left yet
 let filter = ""; try { filter = localStorage.getItem("attend-filter") || ""; } catch (e) {}
 
 function toast(msg, ms = 3500) {
@@ -272,39 +285,51 @@ function render() {
   $("dateLabel").innerHTML = `${d.getMonth() + 1}월 ${d.getDate()}일 (${DAYS[d.getDay()]})${isToday ? "<small>오늘</small>" : ""}`;
   const all = studentList();
   const classes = [...new Set(all.map((s) => (s.cls || "").trim()).filter(Boolean))];
-  if (filter && !classes.includes(filter)) filter = "";
+  if (filter && filter !== IN_NOW && !classes.includes(filter)) filter = "";
+  const isIn = (s) => !!(entries[s.id]?.in && !entries[s.id]?.out);
+  const setFilter = (c) => { filter = c; try { localStorage.setItem("attend-filter", c); } catch (e) {} render(); };
   $("classBar").innerHTML = "";
-  if (classes.length) {
-    for (const c of ["", ...classes]) {
-      const n = all.filter((s) => !c || (s.cls || "").trim() === c).length;
+  if (all.length) {
+    const chip = (label, n, value, special) => {
       const b = document.createElement("button");
-      b.setAttribute("aria-pressed", c === filter);
-      b.innerHTML = `${esc(c || "전체")}<span>${n}</span>`;
-      b.onclick = () => { filter = c; try { localStorage.setItem("attend-filter", c); } catch (e) {} render(); };
+      if (special) b.className = "special";
+      b.setAttribute("aria-pressed", value === filter);
+      b.innerHTML = `${esc(label)}<span>${n}</span>`;
+      b.onclick = () => setFilter(value);
       $("classBar").append(b);
-    }
+    };
+    chip("전체", all.length, "");
+    chip("지금 등원 중", all.filter(isIn).length, IN_NOW, true);
+    for (const c of classes) chip(c, all.filter((s) => (s.cls || "").trim() === c).length, c);
   }
-  const list = all.filter((s) => !filter || (s.cls || "").trim() === filter);
+  const list = filter === IN_NOW ? all.filter(isIn) : all.filter((s) => !filter || (s.cls || "").trim() === filter);
+  for (const id of [...selected]) if (!list.some((s) => s.id === id)) selected.delete(id);
+  renderSelBar(list, isToday);
   const nIn = list.filter((s) => entries[s.id]?.in).length, nOut = list.filter((s) => entries[s.id]?.out).length;
+  const fname = filter === IN_NOW ? "지금 등원 중" : filter;
   $("summary").innerHTML = list.length
-    ? `<span>${filter ? `총 ${all.length}명 중 ${esc(filter)}` : "총"} <b>${list.length}</b>명</span><span>등원 <b>${nIn}</b></span><span>하원 <b>${nOut}</b></span><span>미등원 <b>${list.length - nIn}</b></span>` : "";
+    ? `<span>${filter ? `총 ${all.length}명 중 ${esc(fname)}` : "총"} <b>${list.length}</b>명</span><span>등원 <b>${nIn}</b></span><span>하원 <b>${nOut}</b></span><span>미등원 <b>${list.length - nIn}</b></span>` : "";
   const box = $("list"); box.innerHTML = "";
   if (!all.length) {
     box.innerHTML = `<div class="empty"><strong>아직 등록된 학생이 없어요</strong><span>학생 탭에서 추가하거나, 폰 앱에서 로그인하면 폰에 있던 학생이 올라와요.</span></div>`;
     return;
   }
   if (!isToday) box.insertAdjacentHTML("beforeend", `<p class="hint">지난 날짜는 기록만 볼 수 있어요. 날짜를 누르면 오늘로 돌아가요.</p>`);
+  if (!list.length && filter === IN_NOW) {
+    box.insertAdjacentHTML("beforeend", `<div class="empty"><strong>지금 등원 중인 학생이 없어요</strong><span>등원하고 아직 하원하지 않은 학생이 여기 모여요.</span></div>`);
+    return;
+  }
   let last = null;
   for (const s of list) {
     const cls = (s.cls || "").trim();
-    if (!filter && classes.length && cls !== last) {
+    if ((!filter || filter === IN_NOW) && classes.length && cls !== last) {
       const n = list.filter((x) => (x.cls || "").trim() === cls).length;
       box.insertAdjacentHTML("beforeend", `<div class="group">${esc(cls || "반 없음")} · ${n}명</div>`);
       last = cls;
     }
     const e = entries[s.id] || {};
     const row = document.createElement("div");
-    row.className = "row" + (e.out ? " state-out" : e.in ? " state-in" : "");
+    row.className = "row" + (e.out ? " state-out" : e.in ? " state-in" : "") + (selMode ? " selmode" : "") + (selected.has(s.id) ? " selected" : "");
     const times = [];
     if (e.in) times.push(`<button class="t-in" data-k="in">등원 ${esc(e.in)}</button>`);
     if (e.out) times.push(`<button class="t-out" data-k="out">하원 ${esc(e.out)}</button>`);
@@ -315,9 +340,21 @@ function render() {
     else if (!e.out) { b.className = "big out"; b.textContent = "하원"; b.onclick = () => check(s, "out"); }
     else { b.className = "big done"; b.textContent = "완료"; b.disabled = true; }
     if (!isToday) b.disabled = true;
-    row.append(b);
-    row.querySelector(".who").onclick = (ev) => { if (!ev.target.closest("[data-k]")) editStudent(s); };
-    row.querySelectorAll("[data-k]").forEach((u) => u.onclick = () => timeSheet(s, u.dataset.k));
+    if (selMode) {
+      const cb = document.createElement("input");
+      cb.type = "checkbox"; cb.className = "pick"; cb.checked = selected.has(s.id);
+      cb.setAttribute("aria-label", s.name + " 선택");
+      row.prepend(cb);
+      row.onclick = (ev) => {
+        if (ev.target !== cb) cb.checked = !cb.checked;
+        cb.checked ? selected.add(s.id) : selected.delete(s.id);
+        render();
+      };
+    } else {
+      row.append(b);
+      row.querySelector(".who").onclick = (ev) => { if (!ev.target.closest("[data-k]")) editStudent(s); };
+      row.querySelectorAll("[data-k]").forEach((u) => u.onclick = () => timeSheet(s, u.dataset.k));
+    }
     box.append(row);
   }
 }
@@ -326,6 +363,62 @@ function fill(kind, s, time) {
   const t = (kind === "in" ? settings.tplIn : settings.tplOut) || DEFAULT_TPL[kind];
   const d = new Date(day + "T00:00:00");
   return t.replaceAll("{이름}", s.name).replaceAll("{시간}", time).replaceAll("{날짜}", `${d.getMonth() + 1}월 ${d.getDate()}일`);
+}
+
+/* ---------- select many ---------- */
+function renderSelBar(list, isToday) {
+  const bar = $("selBar"); bar.innerHTML = "";
+  if (!list.length || !isToday) { if (!isToday) selMode = false; return; }
+  const btn = (label, cls, fn, disabled) => {
+    const b = document.createElement("button");
+    b.className = "btn" + (cls ? " " + cls : ""); b.textContent = label; b.onclick = fn; b.disabled = !!disabled;
+    bar.append(b); return b;
+  };
+  if (!selMode) {
+    btn("여러 명 선택", "", () => { selMode = true; selected.clear(); render(); });
+    return;
+  }
+  const picked = list.filter((s) => selected.has(s.id));
+  const canIn = picked.filter((s) => !entries[s.id]?.in);
+  const canOut = picked.filter((s) => entries[s.id]?.in && !entries[s.id]?.out);
+  const count = document.createElement("span"); count.className = "count";
+  count.textContent = `${picked.length}명 선택`;
+  bar.append(count);
+  const allOn = picked.length === list.length;
+  btn(allOn ? "전체 해제" : "전체 선택", "", () => { allOn ? selected.clear() : list.forEach((s) => selected.add(s.id)); render(); });
+  btn(`등원 ${canIn.length}명`, "go-in", () => bulkCheck("in", canIn, picked.length), !canIn.length);
+  btn(`하원 ${canOut.length}명`, "go-out", () => bulkCheck("out", canOut, picked.length), !canOut.length);
+  btn("취소", "", () => { selMode = false; selected.clear(); render(); });
+}
+
+function bulkCheck(kind, targets, pickedCount) {
+  const label = kind === "in" ? "등원" : "하원";
+  const skipped = pickedCount - targets.length;
+  const sh = sheet(`
+    <h3>${targets.length}명 한꺼번에 ${label}</h3>
+    <div class="namelist">${targets.map((s) => esc(s.name)).join(", ")}</div>
+    ${skipped ? `<p class="hint">선택한 학생 중 ${skipped}명은 이미 ${label}했거나 ${kind === "out" ? "아직 등원 전이라" : ""} 빠졌어요.</p>` : ""}
+    <label class="f">${label} 시간 <input type="time" class="timein" id="bTime" value="${hm(new Date())}"></label>
+    <p class="hint">학부모마다 각자 이름이 들어간 문자가 따로 가요. 선생님 폰(010-2823-0910)에서 보내져요.</p>
+    <div class="btns"><button class="btn go-${kind}" id="bGo">기록하고 문자 ${targets.length}통 보내기</button><button class="btn" id="bNoSms">문자 없이 기록만</button><button class="btn" data-close style="margin-left:auto">취소</button></div>`);
+  const save = async (withSms) => {
+    const time = sh.querySelector("#bTime").value || hm(new Date());
+    sh.querySelectorAll("button").forEach((b) => (b.disabled = true));
+    const up = {};
+    for (const s of targets) up[`${s.id}/${kind}`] = time;
+    try {
+      await db.ref("days/" + day).update(up);
+      if (withSms) for (const s of targets) enqueue(s, fill(kind, s, time), true);
+      closeSheet();
+      selMode = false; selected.clear(); render();
+      toast(`${targets.length}명 ${label} ${time} 기록했어요` + (withSms ? ` · 문자 ${targets.length}통 보내는 중` : ""), 5000);
+    } catch (e) {
+      sh.querySelectorAll("button").forEach((b) => (b.disabled = false));
+      toast("저장하지 못했어요. 인터넷 연결을 확인해 주세요.");
+    }
+  };
+  sh.querySelector("#bGo").onclick = () => save(true);
+  sh.querySelector("#bNoSms").onclick = () => save(false);
 }
 
 /* ---------- sheets ---------- */
@@ -365,9 +458,10 @@ function check(s, kind) {
   sh.querySelector("#tTime").addEventListener("keydown", (e) => { if (e.key === "Enter") save(true); });
 }
 
-function enqueue(s, body) {
+function enqueue(s, body, quiet) {
   const ref = db.ref("outbox").push();
   ref.set({ to: digits(s.phone), body, name: s.name, by: auth.currentUser?.email || "", createdAt: firebase.database.ServerValue.TIMESTAMP, status: "pending" });
+  if (quiet) return;   // bulk sends: results show in 설정 → 최근 보낸 문자
   toast(`${s.name} 문자 보내는 중…`);
   let done = false;
   const h = ref.child("status").on("value", (snap) => {
