@@ -100,17 +100,36 @@ textarea { min-height: 120px; resize: vertical; }
 .pill.failed, .pill.expired { color: var(--danger); border: 1px solid var(--danger); }
 .login { max-width: 360px; margin: 12vh auto 0; padding-inline: 16px; display: grid; gap: 12px; }
 .login h1 { margin: 0; font-size: 26px; }
+.linkbtn { font: inherit; font-size: 13px; background: none; border: none; padding: 0; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; justify-self: start; }
+.wtotals { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; }
+.wtotal { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+.wtotal .n { font-size: 13px; color: var(--muted); }
+.wtotal .h { font-size: 22px; font-weight: 700; }
+.wtotal .h small { font-size: 13px; font-weight: 400; color: var(--muted); margin-left: 2px; }
+.wweek { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--muted); padding: 10px 2px 0; }
+.wweek b { color: var(--ink); }
+.wrow { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; width: 100%; text-align: left; font: inherit; color: inherit; }
+button.wrow { cursor: pointer; }
+.wrow .wd { font-size: 13px; color: var(--muted); }
+.wrow .wt { font-weight: 700; font-size: 16px; }
+.wrow .wh { font-weight: 700; font-size: 16px; grid-row: span 2; white-space: nowrap; }
+.wrow .wn { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+.wtag { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 999px; padding: 1px 8px; background: var(--in-soft); color: var(--in); margin-right: 6px; }
+.wtag.me { background: var(--accent); color: var(--bg); }
+.lockbar { background: var(--out-soft); color: var(--out); border-radius: 10px; padding: 8px 12px; font-size: 13px; font-weight: 500; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 </style>
 </head>
 <body>
 
 <div class="login" id="login" hidden>
   <h1>수인T 출결</h1>
-  <p class="hint">선생님·조교 계정으로 로그인하면 폰 앱과 같은 출결 기록을 봐요.</p>
+  <p class="hint">선생님·조교 계정으로 로그인하면 폰 앱과 같은 출결 기록과 조교 근무 시간을 봐요.</p>
   <label class="f">이메일 <input type="email" id="email" autocomplete="username"></label>
   <label class="f">비밀번호 <input type="password" id="pw" autocomplete="current-password"></label>
   <button class="btn primary" id="loginBtn">로그인</button>
   <span class="status" id="loginStatus"></span>
+  <button class="linkbtn" id="signupBtn">조교 계정이 처음이면 위 칸을 채우고 여기를 눌러 만들기</button>
 </div>
 
 <div class="wrap" id="app" hidden>
@@ -118,6 +137,7 @@ textarea { min-height: 120px; resize: vertical; }
     <div class="brand">수인T 출결</div>
     <div class="tabs" role="tablist">
       <button role="tab" aria-selected="true" data-tab="today">출결</button>
+      <button role="tab" aria-selected="false" data-tab="work">근무</button>
       <button role="tab" aria-selected="false" data-tab="students">학생</button>
       <button role="tab" aria-selected="false" data-tab="settings">설정</button>
     </div>
@@ -133,6 +153,15 @@ textarea { min-height: 120px; resize: vertical; }
     <div class="chips" id="classBar" style="margin-top:10px"></div>
     <div class="selbar" id="selBar"></div>
     <div class="list" id="list" style="margin-top:10px"></div>
+  </section>
+
+  <section id="tab-work" hidden>
+    <div class="datebar">
+      <button class="iconbtn" id="wPrev" aria-label="이전 달">‹</button>
+      <div class="d" id="wLabel" title="이번 달로"></div>
+      <button class="iconbtn" id="wNext" aria-label="다음 달">›</button>
+    </div>
+    <div id="wBody" style="display:grid;gap:10px;margin-top:10px"></div>
   </section>
 
   <section id="tab-students" hidden>
@@ -229,6 +258,17 @@ $("loginBtn").onclick = async () => {
   try { await auth.signInWithEmailAndPassword($("email").value.trim(), $("pw").value); st.textContent = ""; }
   catch (e) { st.className = "status err"; st.textContent = "로그인하지 못했어요. 이메일·비밀번호를 확인해 주세요."; }
 };
+$("signupBtn").onclick = async () => {
+  const st = $("loginStatus"), em = $("email").value.trim(), pw = $("pw").value;
+  if (!em || pw.length < 6) { st.className = "status err"; st.textContent = "이메일과 6자 이상 비밀번호를 위 칸에 적고 다시 눌러 주세요."; return; }
+  st.className = "status"; st.textContent = "계정을 만드는 중…";
+  try { await auth.createUserWithEmailAndPassword(em, pw); st.textContent = ""; }
+  catch (e) {
+    st.className = "status err";
+    st.textContent = e.code === "auth/email-already-in-use" ? "이미 만든 계정이에요. 로그인을 눌러 주세요."
+      : e.code === "auth/invalid-email" ? "이메일 주소를 확인해 주세요." : "계정을 만들지 못했어요. 선생님께 알려 주세요.";
+  }
+};
 $("pw").addEventListener("keydown", (e) => { if (e.key === "Enter") $("loginBtn").click(); });
 $("logout").onclick = () => auth.signOut().then(() => location.reload());
 
@@ -236,7 +276,8 @@ let started = false;
 function start() {
   if (started) return; started = true;
   db.ref("students").on("value", (s) => { students = s.val() || {}; render(); renderStudents(); },
-    (e) => toast("데이터를 읽을 권한이 없어요. 관리자에게 이 계정을 등록해 달라고 해 주세요.", 8000));
+    (e) => staffOnly());
+  startWork();
   db.ref("settings").on("value", (s) => {
     settings = s.val() || {};
     if (document.activeElement !== $("tplIn")) $("tplIn").value = settings.tplIn || DEFAULT_TPL.in;
@@ -256,7 +297,7 @@ function start() {
 /* ---------- tabs ---------- */
 document.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => {
   document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-selected", x === b));
-  ["today", "students", "settings"].forEach((t) => $("tab-" + t).hidden = t !== b.dataset.tab);
+  ["today", "work", "students", "settings"].forEach((t) => $("tab-" + t).hidden = t !== b.dataset.tab);
 });
 
 /* ---------- day ---------- */
@@ -588,6 +629,162 @@ $("saveTpl").onclick = async () => {
   await db.ref("settings").update({ tplIn: $("tplIn").value.trim() || DEFAULT_TPL.in, tplOut: $("tplOut").value.trim() || DEFAULT_TPL.out });
   $("tplStatus").textContent = "저장했어요.";
 };
+
+/* ---------- work hours (조교 근무 시간) ----------
+   staff/{emailKey} = {name, email}            선생님이 등록한 조교 (이 목록에 있어야 근무 탭을 볼 수 있음)
+   work/{YYYY-MM}/{emailKey}/{id} = {date, start, end, note}
+   workLock/{YYYY-MM} = {at, by}               확정되면 조교는 그 달을 고칠 수 없음
+   시급·급여는 여기에 저장하지 않는다 (가계부 앱에서만 계산). */
+const ekey = (e) => String(e || "").trim().toLowerCase().replace(/\./g, ",");
+const myKey = () => ekey(auth.currentUser?.email);
+const mins = (t) => { const [h, m] = String(t || "").split(":").map(Number); return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : NaN; };
+const hoursOf = (e) => { const a = mins(e.start), b = mins(e.end); return b > a ? (b - a) / 60 : 0; };
+const fh = (h) => String(Math.round(h * 100) / 100);
+let isAdmin = false, staff = {}, staffDenied = false, staffLoaded = false;
+let wMonth = ymd(new Date()).slice(0, 7), wData = {}, wLock = null, wRefs = [];
+const nameOf = (k) => staff[k]?.name || k.replace(/,/g, ".").split("@")[0];
+
+function staffOnly() {
+  // an account that cannot read students (근무 시간만 적는 계정): show only the 근무 tab
+  document.querySelectorAll(".tabs button").forEach((b) => { b.hidden = b.dataset.tab !== "work"; });
+  document.querySelector('.tabs button[data-tab="work"]').click();
+}
+function startWork() {
+  // only the teacher account can read this path (database rules), so a successful read means "teacher"
+  db.ref("adminOnly").on("value", () => { if (!isAdmin) { isAdmin = true; renderWork(); } }, () => {});
+  db.ref("staff").on("value", (s) => { staff = s.val() || {}; staffLoaded = true; staffDenied = false; renderWork(); },
+    () => { staffDenied = true; staffLoaded = true; renderWork(); });
+  watchWork();
+}
+function watchWork() {
+  wRefs.forEach((r) => r.off()); wData = {}; wLock = null;
+  const a = db.ref("work/" + wMonth), b = db.ref("workLock/" + wMonth);
+  wRefs = [a, b];
+  a.on("value", (s) => { wData = s.val() || {}; renderWork(); }, () => { wData = {}; renderWork(); });
+  b.on("value", (s) => { wLock = s.val(); renderWork(); }, () => {});
+  renderWork();
+}
+function wShift(n) { const [y, m] = wMonth.split("-").map(Number); const d = new Date(y, m - 1 + n, 1); wMonth = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; watchWork(); }
+$("wPrev").onclick = () => wShift(-1);
+$("wNext").onclick = () => wShift(1);
+$("wLabel").onclick = () => { wMonth = ymd(new Date()).slice(0, 7); watchWork(); };
+
+const weekStart = (ds) => { const d = new Date(ds + "T00:00:00"); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d; };
+const md = (d) => `${d.getMonth() + 1}/${d.getDate()}`;
+const canEdit = (who) => isAdmin || (who === myKey() && !!staff[who] && !wLock);
+
+function renderWork() {
+  const [y, m] = wMonth.split("-").map(Number), thisMonth = wMonth === ymd(new Date()).slice(0, 7);
+  $("wLabel").innerHTML = `${y}년 ${m}월${thisMonth ? "<small>이번 달</small>" : ""}`;
+  const body = $("wBody"), me = myKey(), email = auth.currentUser?.email || "";
+  const foot = `<div class="card"><div class="btns"><span class="status">로그인: ${esc(email)}</span><button class="btn" id="wLogout" style="margin-left:auto">로그아웃</button></div></div>`;
+  const done = () => { const lo = $("wLogout"); if (lo) lo.onclick = () => auth.signOut().then(() => location.reload()); };
+  if (!staffLoaded) { body.innerHTML = `<p class="hint">불러오는 중…</p>`; return; }
+  if (!isAdmin && (staffDenied || !staff[me])) {
+    body.innerHTML = `<div class="empty"><strong>아직 조교로 등록되지 않았어요</strong><span>선생님께 이 이메일을 알려 주세요. 등록되면 여기에서 근무 시간을 적을 수 있어요.</span><b>${esc(email)}</b></div>${foot}`;
+    done(); return;
+  }
+  const rows = [];
+  Object.entries(wData).forEach(([who, es]) => Object.entries(es || {}).forEach(([id, e]) => rows.push({ who, id, ...e, h: hoursOf(e) })));
+  rows.sort((a, b) => (a.date + a.start + a.who).localeCompare(b.date + b.start + b.who));
+  const people = [...new Set([...Object.keys(staff), ...rows.map((r) => r.who)])].sort((a, b) => nameOf(a).localeCompare(nameOf(b), "ko"));
+  const total = (list, who) => list.filter((r) => r.who === who).reduce((a, r) => a + r.h, 0);
+  const canAdd = isAdmin ? people.length > 0 : !wLock;
+
+  let html = "";
+  if (wLock) html += `<div class="lockbar">이 달은 확정됐어요${wLock.at ? ` (${md(new Date(wLock.at))})` : ""}. ${isAdmin ? "선생님만 고칠 수 있어요." : "고칠 게 있으면 선생님께 알려 주세요."}</div>`;
+  html += `<div class="wtotals">${people.map((k) => `<div class="wtotal"><div class="n">${esc(nameOf(k))}${k === me ? " (나)" : ""}</div><div class="h">${fh(total(rows, k))}<small>시간</small></div></div>`).join("")}</div>`;
+  if (canAdd) html += `<button class="btn primary" id="wAdd" style="padding:12px 16px;font-weight:700">근무 시간 적기</button>`;
+  if (!rows.length) html += `<div class="empty"><strong>${m}월에 적힌 근무가 없어요</strong>${canAdd ? "<span>일한 날마다 시작·끝 시간을 적어 주세요. 적는 즉시 선생님과 다른 조교 선생님에게도 보여요.</span>" : ""}</div>`;
+  let wk = "";
+  rows.forEach((r) => {
+    const ws = weekStart(r.date), key = ymd(ws);
+    if (key !== wk) {
+      wk = key; const we = new Date(ws); we.setDate(we.getDate() + 6);
+      const inWeek = rows.filter((x) => ymd(weekStart(x.date)) === key);
+      html += `<div class="wweek"><b>${md(ws)}(월) ~ ${md(we)}(일)</b><span>${people.filter((k) => total(inWeek, k)).map((k) => `${esc(nameOf(k))} ${fh(total(inWeek, k))}시간`).join(" · ")}</span></div>`;
+    }
+    const d = new Date(r.date + "T00:00:00"), ed = canEdit(r.who);
+    html += `<${ed ? "button" : "div"} class="wrow" ${ed ? `data-we="${esc(r.who)}|${esc(r.id)}"` : ""}>
+      <span class="wd"><span class="wtag${r.who === me ? " me" : ""}">${esc(nameOf(r.who))}</span>${md(d)} (${DAYS[d.getDay()]})</span>
+      <span class="wh">${fh(r.h)}시간</span>
+      <span class="wt">${esc(r.start)} ~ ${esc(r.end)}</span>
+      ${r.note ? `<span class="wn" style="grid-column:1/-1">${esc(r.note)}</span>` : ""}
+    </${ed ? "button" : "div"}>`;
+  });
+  if (isAdmin) {
+    html += `<div class="card" style="margin-top:8px"><h2>${m}월 확정</h2>
+      <p class="hint">${wLock ? "확정된 달이에요. 가계부 앱의 조교 항목에서 이 달 시간을 불러올 수 있어요." : "월말에 시간을 다 확인했으면 확정해 주세요. 확정하면 조교 선생님은 이 달을 고칠 수 없어요."}</p>
+      <div class="btns"><button class="btn ${wLock ? "" : "primary"}" id="wLockBtn">${wLock ? "확정 취소" : `${m}월 확정하기`}</button></div></div>
+    <div class="card"><h2>조교 선생님</h2>
+      <p class="hint">여기에 등록한 이메일로 로그인한 조교 선생님은 근무 탭에서 자기 시간을 적고, 서로의 시간을 볼 수 있어요. 시급과 급여는 여기에 나오지 않아요.</p>
+      <div>${Object.entries(staff).map(([k, v]) => `<div class="srow"><div class="who"><b>${esc(v.name || "")}</b><div class="ph">${esc(v.email || k.replace(/,/g, "."))}</div></div><button class="btn danger" data-wdel="${esc(k)}">빼기</button></div>`).join("") || `<p class="hint">아직 없어요.</p>`}</div>
+      <div class="grid"><label class="f">이름 <input type="text" id="sfName" placeholder="예: 도윤T"></label><label class="f">로그인 이메일 <input type="email" id="sfEmail" placeholder="조교 선생님 이메일"></label></div>
+      <div class="btns"><button class="btn primary" id="sfAdd">조교 추가</button><span class="status" id="sfStatus"></span></div></div>`;
+  }
+  body.innerHTML = html + foot; done();
+  if ($("wAdd")) $("wAdd").onclick = () => workSheet(null);
+  body.querySelectorAll("[data-we]").forEach((b) => b.onclick = () => { const [who, id] = b.dataset.we.split("|"); workSheet({ who, id, ...wData[who][id] }); });
+  if (!isAdmin) return;
+  $("wLockBtn").onclick = async () => {
+    try {
+      if (wLock) await db.ref("workLock/" + wMonth).remove();
+      else await db.ref("workLock/" + wMonth).set({ at: firebase.database.ServerValue.TIMESTAMP, by: email });
+      toast(wLock ? "확정을 취소했어요" : `${m}월을 확정했어요`);
+    } catch (e) { toast("저장하지 못했어요. 권한 설정을 확인해 주세요.", 6000); }
+  };
+  body.querySelectorAll("[data-wdel]").forEach((b) => b.onclick = async () => {
+    if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "한 번 더 누르면 빼요"; return; }
+    await db.ref("staff/" + b.dataset.wdel).remove(); toast("목록에서 뺐어요. 적어 둔 근무 시간은 그대로 남아요.");
+  });
+  $("sfAdd").onclick = async () => {
+    const n = $("sfName").value.trim(), em = $("sfEmail").value.trim().toLowerCase(), st = $("sfStatus");
+    st.className = "status err";
+    if (!n) { st.textContent = "이름을 적어 주세요."; return; }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em) || /[#$\[\]\/]/.test(em)) { st.textContent = "이메일 주소를 확인해 주세요."; return; }
+    try { await db.ref("staff/" + ekey(em)).set({ name: n, email: em }); st.className = "status"; st.textContent = ""; toast(`${n} 추가했어요`); }
+    catch (e) { st.textContent = "저장하지 못했어요. 권한 설정을 확인해 주세요."; }
+  };
+}
+
+function workSheet(cur) {
+  const isNew = !cur, me = myKey();
+  let last = {}; try { last = JSON.parse(localStorage.getItem("work-last") || "{}"); } catch (e) {}
+  const today = ymd(new Date());
+  const v = cur || { who: isAdmin ? (staff[last.who] ? last.who : Object.keys(staff)[0]) : me, date: today.startsWith(wMonth) ? today : wMonth + "-01", start: last.start || "18:00", end: last.end || "22:00", note: "" };
+  const who = isAdmin ? `<label class="f">누구 <select id="wWho">${Object.keys({ ...staff, [v.who]: 1 }).map((k) => `<option value="${esc(k)}"${k === v.who ? " selected" : ""}>${esc(nameOf(k))}</option>`).join("")}</select></label>` : "";
+  const sh = sheet(`<h3>${isNew ? "근무 시간 적기" : "근무 시간 고치기"}</h3>${who}
+    <label class="f">날짜 <input type="date" id="wDate" value="${esc(v.date)}"></label>
+    <div class="two"><label class="f">시작 <input type="time" id="wStart" step="300" value="${esc(v.start)}"></label><label class="f">끝 <input type="time" id="wEnd" step="300" value="${esc(v.end)}"></label></div>
+    <label class="f">맡은 수업 (선택) <input type="text" id="wNote" value="${esc(v.note || "")}" placeholder="예: 고2 대수 클리닉" maxlength="60"></label>
+    <div class="status" id="wCalc"></div>
+    <div class="btns">${isNew ? "" : `<button class="btn danger" id="wDel">삭제</button>`}<span style="margin-left:auto;display:flex;gap:8px"><button class="btn" data-close>취소</button><button class="btn primary" id="wSave">저장</button></span></div>`);
+  const q = (id) => sh.querySelector(id);
+  const read = () => ({ date: q("#wDate").value, start: q("#wStart").value, end: q("#wEnd").value, note: q("#wNote").value.trim() });
+  const calc = () => { const e = read(), h = hoursOf(e), c = q("#wCalc"); c.className = "status" + (h ? "" : " err"); c.textContent = h ? `${fh(h)}시간` : "끝 시간이 시작 시간보다 늦어야 해요."; return h; };
+  ["#wStart", "#wEnd"].forEach((id) => q(id).addEventListener("input", calc)); calc();
+  q("#wSave").onclick = async () => {
+    const e = read(), w = isAdmin ? q("#wWho").value : me;
+    if (!e.date) { q("#wDate").focus(); return; }
+    if (!calc()) return;
+    if (!e.note) delete e.note;
+    const month = e.date.slice(0, 7), ref = db.ref(`work/${month}/${w}`);
+    const moved = cur && (cur.who !== w || cur.date.slice(0, 7) !== month);
+    try {
+      if (cur && !moved) await ref.child(cur.id).set(e);
+      else { await ref.push().set(e); if (moved) await db.ref(`work/${cur.date.slice(0, 7)}/${cur.who}/${cur.id}`).remove(); }
+      try { localStorage.setItem("work-last", JSON.stringify({ who: w, start: e.start, end: e.end })); } catch (x) {}
+      closeSheet(); toast("저장했어요");
+      if (month !== wMonth) { wMonth = month; watchWork(); }
+    } catch (x) { toast("저장하지 못했어요. 확정된 달이거나 권한이 없어요.", 6000); }
+  };
+  const del = q("#wDel");
+  if (del) del.onclick = async () => {
+    if (!del.dataset.sure) { del.dataset.sure = 1; del.textContent = "한 번 더 누르면 삭제"; return; }
+    try { await db.ref(`work/${cur.date.slice(0, 7)}/${cur.who}/${cur.id}`).remove(); closeSheet(); }
+    catch (x) { toast("삭제하지 못했어요. 확정된 달이거나 권한이 없어요.", 6000); }
+  };
+}
 
 // roll over to the new day if the page stays open past midnight
 let lastToday = ymd(new Date());
