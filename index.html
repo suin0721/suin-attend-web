@@ -641,7 +641,7 @@ const mins = (t) => { const [h, m] = String(t || "").split(":").map(Number); ret
 const hoursOf = (e) => { const a = mins(e.start), b = mins(e.end); return b > a ? (b - a) / 60 : 0; };
 const fh = (h) => String(Math.round(h * 100) / 100);
 let isAdmin = false, staff = {}, staffDenied = false, staffLoaded = false;
-let wMonth = ymd(new Date()).slice(0, 7), wData = {}, wLock = null, wRefs = [];
+let wMonth = ymd(new Date()).slice(0, 7), wData = {}, wLock = null, wRefs = [], wBulkDraft = "";
 const nameOf = (k) => staff[k]?.name || k.replace(/,/g, ".").split("@")[0];
 
 function staffOnly() {
@@ -713,7 +713,11 @@ function renderWork() {
     </${ed ? "button" : "div"}>`;
   });
   if (isAdmin) {
-    html += `<div class="card" style="margin-top:8px"><h2>${m}월 확정</h2>
+    html += `<details class="card" style="margin-top:8px"${wBulkDraft ? " open" : ""}><summary style="cursor:pointer;font-weight:700">여러 개 한 번에 넣기</summary>
+      <p class="hint">한 줄에 하나씩 "이름 날짜 시작 끝 메모" 순서로 적어요. 이름은 아래 조교 선생님 목록과 같아야 해요.</p>
+      <textarea id="wBulk" placeholder="도윤T 11/3 17:55 21:00&#10;두콩T 11/6 17:00 20:00 중등">${esc(wBulkDraft)}</textarea>
+      <div class="btns"><button class="btn" id="wBulkBtn">모두 넣기</button><span class="status" id="wBulkStatus"></span></div></details>
+    <div class="card"><h2>${m}월 확정</h2>
       <p class="hint">${wLock ? "확정된 달이에요. 가계부 앱의 조교 항목에서 이 달 시간을 불러올 수 있어요." : "월말에 시간을 다 확인했으면 확정해 주세요. 확정하면 조교 선생님은 이 달을 고칠 수 없어요."}</p>
       <div class="btns"><button class="btn ${wLock ? "" : "primary"}" id="wLockBtn">${wLock ? "확정 취소" : `${m}월 확정하기`}</button></div></div>
     <div class="card"><h2>조교 선생님</h2>
@@ -726,6 +730,25 @@ function renderWork() {
   if ($("wAdd")) $("wAdd").onclick = () => workSheet(null);
   body.querySelectorAll("[data-we]").forEach((b) => b.onclick = () => { const [who, id] = b.dataset.we.split("|"); workSheet({ who, id, ...wData[who][id] }); });
   if (!isAdmin) return;
+  $("wBulk").oninput = (e) => { wBulkDraft = e.target.value; };
+  $("wBulkBtn").onclick = async () => {
+    const st = $("wBulkStatus"), up = {}, bad = [], byName = {};
+    Object.entries(staff).forEach(([k, v]) => { byName[(v.name || "").trim()] = k; });
+    const t2 = (t) => { const x = /^(\d{1,2}):(\d{2})$/.exec(t); return x && +x[1] < 24 && +x[2] < 60 ? `${pad(+x[1])}:${x[2]}` : ""; };
+    let ok = 0;
+    wBulkDraft.split("\n").map((l) => l.trim()).filter(Boolean).forEach((line) => {
+      const [nm, ds, a, b, ...rest] = line.split(/\s+/), who = byName[nm];
+      const d1 = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(ds || ""), d2 = /^(\d{1,2})\/(\d{1,2})$/.exec(ds || "");
+      const date = d1 ? `${d1[1]}-${pad(+d1[2])}-${pad(+d1[3])}` : d2 ? `${wMonth.slice(0, 4)}-${pad(+d2[1])}-${pad(+d2[2])}` : "";
+      const e = { date, start: t2(a || ""), end: t2(b || "") };
+      if (!who || !date || isNaN(new Date(date + "T00:00:00")) || !hoursOf(e)) { bad.push(line); return; }
+      if (rest.length) e.note = rest.join(" ").slice(0, 60);
+      up[`${date.slice(0, 7)}/${who}/${db.ref("work").push().key}`] = e; ok++;
+    });
+    if (!ok) { st.className = "status err"; st.textContent = bad.length ? `넣지 못한 줄: ${bad[0]}` : "적힌 줄이 없어요."; return; }
+    try { await db.ref("work").update(up); wBulkDraft = bad.join("\n"); toast(`${ok}개 넣었어요${bad.length ? ` · ${bad.length}줄은 형식이 달라 남겨 뒀어요` : ""}`, 5000); renderWork(); }
+    catch (x) { st.className = "status err"; st.textContent = "저장하지 못했어요. 권한 설정을 확인해 주세요."; }
+  };
   $("wLockBtn").onclick = async () => {
     try {
       if (wLock) await db.ref("workLock/" + wMonth).remove();
