@@ -640,7 +640,7 @@ const myKey = () => ekey(auth.currentUser?.email);
 const mins = (t) => { const [h, m] = String(t || "").split(":").map(Number); return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : NaN; };
 const hoursOf = (e) => { const a = mins(e.start), b = mins(e.end); return b > a ? (b - a) / 60 : 0; };
 const fh = (h) => String(Math.round(h * 100) / 100);
-let isAdmin = false, staff = {}, staffDenied = false, staffLoaded = false;
+let isAdmin = false, roleKnown = false, staff = {}, staffDenied = false, staffLoaded = false;
 let wMonth = ymd(new Date()).slice(0, 7), wData = {}, wLock = null, wRefs = [], wBulkDraft = "";
 const nameOf = (k) => staff[k]?.name || k.replace(/,/g, ".").split("@")[0];
 
@@ -650,17 +650,24 @@ function staffOnly() {
   document.querySelector('.tabs button[data-tab="work"]').click();
 }
 function startWork() {
-  // only the teacher account can read this path (database rules), so a successful read means "teacher"
-  db.ref("adminOnly").on("value", () => { if (!isAdmin) { isAdmin = true; renderWork(); } }, () => {});
-  db.ref("staff").on("value", (s) => { staff = s.val() || {}; staffLoaded = true; staffDenied = false; renderWork(); },
-    () => { staffDenied = true; staffLoaded = true; renderWork(); });
-  watchWork();
+  // only the teacher account can read "adminOnly" (database rules): success = teacher, denied = 조교
+  // a 조교 account reads only its own staff record and its own hours
+  db.ref("adminOnly").once("value").then(() => true, () => false).then((ok) => {
+    isAdmin = ok; roleKnown = true;
+    if (ok) db.ref("staff").on("value", (s) => { staff = s.val() || {}; staffLoaded = true; renderWork(); }, () => { staffDenied = true; staffLoaded = true; renderWork(); });
+    else db.ref("staff/" + ekey(auth.currentUser?.email)).on("value", (s) => { const v = s.val(); staff = v ? { [ekey(auth.currentUser?.email)]: v } : {}; staffLoaded = true; staffDenied = false; renderWork(); },
+      () => { staffDenied = true; staffLoaded = true; renderWork(); });
+    watchWork();
+  });
+  renderWork();
 }
 function watchWork() {
+  if (!roleKnown) return;
   wRefs.forEach((r) => r.off()); wData = {}; wLock = null;
-  const a = db.ref("work/" + wMonth), b = db.ref("workLock/" + wMonth);
+  const me = ekey(auth.currentUser?.email);
+  const a = db.ref("work/" + wMonth + (isAdmin ? "" : "/" + me)), b = db.ref("workLock/" + wMonth);
   wRefs = [a, b];
-  a.on("value", (s) => { wData = s.val() || {}; renderWork(); }, () => { wData = {}; renderWork(); });
+  a.on("value", (s) => { const v = s.val(); wData = isAdmin ? (v || {}) : (v ? { [me]: v } : {}); renderWork(); }, () => { wData = {}; renderWork(); });
   b.on("value", (s) => { wLock = s.val(); renderWork(); }, () => {});
   renderWork();
 }
@@ -693,9 +700,9 @@ function renderWork() {
 
   let html = "";
   if (wLock) html += `<div class="lockbar">이 달은 확정됐어요${wLock.at ? ` (${md(new Date(wLock.at))})` : ""}. ${isAdmin ? "선생님만 고칠 수 있어요." : "고칠 게 있으면 선생님께 알려 주세요."}</div>`;
-  html += `<div class="wtotals">${people.map((k) => `<div class="wtotal"><div class="n">${esc(nameOf(k))}${k === me ? " (나)" : ""}</div><div class="h">${fh(total(rows, k))}<small>시간</small></div></div>`).join("")}</div>`;
+  html += `<div class="wtotals">${people.map((k) => `<div class="wtotal"><div class="n">${esc(nameOf(k))}</div><div class="h">${fh(total(rows, k))}<small>시간</small></div></div>`).join("")}</div>`;
   if (canAdd) html += `<button class="btn primary" id="wAdd" style="padding:12px 16px;font-weight:700">근무 시간 적기</button>`;
-  if (!rows.length) html += `<div class="empty"><strong>${m}월에 적힌 근무가 없어요</strong>${canAdd ? "<span>일한 날마다 시작·끝 시간을 적어 주세요. 적는 즉시 선생님과 다른 조교 선생님에게도 보여요.</span>" : ""}</div>`;
+  if (!rows.length) html += `<div class="empty"><strong>${m}월에 적힌 근무가 없어요</strong>${canAdd ? `<span>${isAdmin ? "조교 선생님이 적으면 여기에 바로 보여요." : "일한 날마다 시작·끝 시간을 적어 주세요. 적는 즉시 선생님에게 보여요."}</span>` : ""}</div>`;
   let wk = "";
   rows.forEach((r) => {
     const ws = weekStart(r.date), key = ymd(ws);
@@ -721,7 +728,7 @@ function renderWork() {
       <p class="hint">${wLock ? "확정된 달이에요. 가계부 앱의 조교 항목에서 이 달 시간을 불러올 수 있어요." : "월말에 시간을 다 확인했으면 확정해 주세요. 확정하면 조교 선생님은 이 달을 고칠 수 없어요."}</p>
       <div class="btns"><button class="btn ${wLock ? "" : "primary"}" id="wLockBtn">${wLock ? "확정 취소" : `${m}월 확정하기`}</button></div></div>
     <div class="card"><h2>조교 선생님</h2>
-      <p class="hint">여기에 등록한 이메일로 로그인한 조교 선생님은 근무 탭에서 자기 시간을 적고, 서로의 시간을 볼 수 있어요. 시급과 급여는 여기에 나오지 않아요.</p>
+      <p class="hint">여기에 등록한 이메일로 로그인한 조교 선생님은 근무 탭에서 자기 시간만 보고 적을 수 있어요. 다른 조교 선생님의 시간은 보이지 않고, 시급과 급여도 여기에 나오지 않아요.</p>
       <div>${Object.entries(staff).map(([k, v]) => `<div class="srow"><div class="who"><b>${esc(v.name || "")}</b><div class="ph">${esc(v.email || k.replace(/,/g, "."))}</div></div><button class="btn danger" data-wdel="${esc(k)}">빼기</button></div>`).join("") || `<p class="hint">아직 없어요.</p>`}</div>
       <div class="grid"><label class="f">이름 <input type="text" id="sfName" placeholder="예: 도윤T"></label><label class="f">로그인 이메일 <input type="email" id="sfEmail" placeholder="조교 선생님 이메일"></label></div>
       <div class="btns"><button class="btn primary" id="sfAdd">조교 추가</button><span class="status" id="sfStatus"></span></div></div>`;
