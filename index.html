@@ -186,6 +186,7 @@ button.wrow { cursor: pointer; }
     </div>
     <div class="card">
       <h2>학생 목록 <span class="hint" id="countLabel"></span></h2>
+      <div class="btns" style="margin-bottom:8px"><button class="btn" id="rosterCsvBtn" title="학생ID·반·이름만 담아요(전화번호·학교는 넣지 않음). 문제 출제기의 누적오답 명단에 올리면 됩니다.">명단 내보내기 (CSV)</button></div>
       <div id="slist"></div>
     </div>
   </section>
@@ -594,6 +595,16 @@ $("bulkBtn").onclick = async () => {
   $("bulk").value = bad.join("\n");
   st.className = bad.length ? "status err" : "status";
   st.textContent = `${ok}명 추가했어요.` + (bad.length ? ` 남은 ${bad.length}줄은 형식을 확인해 주세요.` : "");
+};
+
+/* 명단 내보내기: 출제기 누적오답용. 학생ID(데이터베이스 키)·반·이름만 — 연락처·학교는 넣지 않음 */
+$("rosterCsvBtn").onclick = () => {
+  const cell = v => { let t = String(v ?? ""); if (/^[=+\-@\t\r]/.test(t)) t = "'" + t; return /[",\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  const rows = studentList().map(s => [s.id, s.cls || "", s.name || ""].map(cell).join(","));
+  const csv = "\ufeff" + ["학생ID,반,이름", ...rows].join("\r\n") + "\r\n";
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  a.download = `수인T출결_명단_${new Date().toLocaleDateString("sv-SE")}.csv`; document.body.append(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 };
 
 function renderStudents() {
